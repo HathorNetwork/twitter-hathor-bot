@@ -37,7 +37,7 @@ class Manager {
     } else if (state === Wallet.READY) {
       console.log('Wallet is ready!');
       console.log('Current address:', this.wallet.getCurrentAddress());
-      // this.onNewTweet({text: 'Give me a beer! Wig1U2TXnHXdMmXVQGAXmaGU66Gg76NXuj @Hathor #Testnet #JustTesting'})
+      this.startTwitter();
 
     } else {
       console.log('Wallet unknown state:', state);
@@ -45,7 +45,7 @@ class Manager {
   }
 
   onNewTx(tx) {
-    console.log('onNewTx', tx);
+    //console.log('onNewTx', tx);
   }
 
   matchAddresses(text) {
@@ -60,33 +60,109 @@ class Manager {
     return text.match(/\B@\w*[a-zA-Z]+\w*\b/g);
   }
 
-  onNewTweet(tweet) {
-    console.log(tweet.text);
+  likeTweet(tweet) {
+    this.twitter.post('favorites/create', { id: tweet.id_str }, function(err, response) {
+      if (err) {
+        console.log('likeTweet error:', err[0].message);
+        return;
+      }
 
-    const addresses = this.matchAddresses(tweet.text);
-    if (addresses.length !== 1) {
-      console.log('No address found. Skipping tweet...');
+      let username = response.user.screen_name;
+      let tweetId = response.id_str;
+      console.log(`Tweet liked: https://twitter.com/${username}/status/${tweetId}`)
+    });
+  }
+
+  onNewTweet(tweet) {
+    console.log(`New tweet found: ${tweet.text}`);
+
+    if (this.wallet.state !== Wallet.READY) {
+      console.log('Wallet is not ready. Skipping tweet...');
       return;
     }
 
-    // Exactly one address found.
+    const result = this.parseTweet(tweet);
+    if (!result) {
+      return;
+    }
+
+    const { address, value, token } = result;
+    const username = tweet.user.screen_name;
+
+    this.likeTweet(tweet);
+    this.wallet.sendTransaction(address, value, token).then((response) => {
+      if (response.success) {
+        const tx = response.tx;
+        const value_str = '1 HTR';
+        const url = `https://explorer.hathor.network/transaction/${tx.hash}`;
+        const replyMessage = `@${username} I just sent ${value_str} to ${address}. Enjoy our testnet!\n\n${url}`;
+        this.replyTweet(tweet, replyMessage);
+
+      } else {
+        console.log('Error:', response);
+      }
+
+    }).catch((error) => {
+      console.log('Error sending tokens:', error);
+      const replyMessage = "@${username} I'm out of balance now. Sorry. :'(";
+      //const replyMessage = "Something went wrong sending you tokens. Sorry. :'("
+      this.replyTweet(tweet, replyMessage);
+    });
+  }
+
+  replyTweet(tweet, message) {
+    const data = {
+      in_reply_to_status_id: tweet.id_str,
+      status: message,
+    };
+    this.twitter.post('statuses/update', data, function(err, response) {
+      if (err) {
+        console.log('replyTweet error:', err[0].message);
+        return;
+      }
+
+      let username = response.user.screen_name;
+      let tweetId = response.id_str;
+      console.log(`Tweet replied: https://twitter.com/${username}/status/${tweetId}`)
+    });
+  }
+
+  parseTweet(tweet) {
+    const addresses = this.matchAddresses(tweet.text);
+    if (addresses.length === 0) {
+      console.log('No address found. Skipping tweet...');
+      return null;
+    }
+    if (addresses.length > 1) {
+      console.log('Too many addresses. Skipping tweet...');
+      return null;
+    }
+
+    const hashtags = this.matchHashtags(tweet.text);
+    if (hashtags.findIndex((x) => x.toLowerCase() === '#iwanthtr') < 0) {
+      console.log(`Missing hashtag #IWantHTR. Skipping tweet...`);
+      return null;
+    }
+
+    // Exactly one address found. Great!
     const address = addresses[0];
-    const value = 1;
-    const token = hathorLib.constants.HATHOR_TOKEN_CONFIG;
-    this.wallet.sendTransaction(address, value, token);
+    const value = 100;
+    const token = Wallet.HTR_TOKEN;
+    return {address, value, token};
   }
 
   start() {
     this.wallet.start();
-    /*
-    this.twitter.stream('statuses/filter', {track:'#Hathor, #IWantHTR'}, (stream) => {
+  }
+
+  startTwitter() {
+    this.twitter.stream('statuses/filter', {track:'@HathorNetwork'}, (stream) => {
       console.log('Twitter ready!');
       stream.on('data', this.onNewTweet);
       stream.on('error', (error) => {
         throw error;
       });
     });
-    */
   }
 }
 

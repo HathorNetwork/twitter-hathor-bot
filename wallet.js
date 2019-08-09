@@ -25,6 +25,7 @@ import EventEmitter from 'events';
  * You can subscribe for the following events:
  * - state: When the state of the Wallet changes.
  * - new-tx: When a new tx arrives.
+ * - update-tx: When a known tx is updated. Usually, it happens when one of its outputs is spent.
  **/
 class Wallet extends EventEmitter {
   constructor({ server, seed }) {
@@ -34,6 +35,7 @@ class Wallet extends EventEmitter {
 
     this.onConnectionChange = this.onConnectionChange.bind(this);
     this.handleWebsocketMsg = this.handleWebsocketMsg.bind(this);
+    this.onAddressesLoaded = this.onAddressesLoaded.bind(this);
 
     this.server = server;
     this.seed = seed;
@@ -44,17 +46,34 @@ class Wallet extends EventEmitter {
   }
 
   /**
+   * Called when loading the history of transactions.
+   * It is called every HTTP Request to get the history of a set of addresses.
+   * Usually, this is called multiple times.
+   * The `historyTransactions` contains all transactions, including the ones from a previous call to this method.
+   *
+   * @param {Object} result {historyTransactions, allTokens, newSharedAddress, newSharedIndex, addressesFound}
+   **/
+  onAddressesLoaded(result) {
+    //console.log('result', result);
+  }
+
+  /**
    * Called when the connection to the websocket changes.
    * It is also called if the network is down.
    **/
   onConnectionChange(value) {
-    console.log('Websocket connection:', value);
     if (value) {
       this.setState(Wallet.SYNCING);
       hathorLib.wallet.loadAddressHistory(0, hathorLib.constants.GAP_LIMIT).then(() => {
         this.setState(Wallet.READY);
-      }); // TODO Catch exception.
+      }).catch((error) => {
+        throw error;
+      })
     }
+  }
+
+  getAddressToUse() {
+    return hathorLib.wallet.getAddressToUse();
   }
 
   getCurrentAddress() {
@@ -66,17 +85,7 @@ class Wallet extends EventEmitter {
    **/
   handleWebsocketMsg(wsData) {
     if (wsData.type === 'wallet:address_history') {
-      // TODO we also have to update some wallet lib data? Lib should do it by itself
-      const walletData = hathorLib.wallet.getWalletData();
-      const historyTransactions = 'historyTransactions' in walletData ? walletData.historyTransactions : {};
-      const allTokens = 'allTokens' in walletData ? walletData.allTokens : [];
-      hathorLib.wallet.updateHistoryData(historyTransactions, allTokens, [wsData.history], null, walletData);
-
-      const newWalletData = hathorLib.wallet.getWalletData();
-      const { keys } = newWalletData;
-      //this.props.newTx(wsData.history, keys);
-
-      this.emit('new-tx', wsData.history);
+      this.onNewTx(wsData);
     }
   }
 
@@ -85,6 +94,11 @@ class Wallet extends EventEmitter {
   }
 
   getAllBalances() {
+    return hathorLib.storage.getItem('local:tokens:balance');
+  }
+
+  getBalance(tokenUid) {
+    return this.getAllBalances[tokenUid];
   }
 
   setState(state) {
@@ -92,10 +106,36 @@ class Wallet extends EventEmitter {
     this.emit('state', state);
   }
 
-  onNewTx(tx, addresses) {
+  onNewTx(wsData) {
+    const newTx = wsData.history;
+
+    // TODO we also have to update some wallet lib data? Lib should do it by itself
+    const walletData = hathorLib.wallet.getWalletData();
+    const historyTransactions = 'historyTransactions' in walletData ? walletData.historyTransactions : {};
+    const allTokens = 'allTokens' in walletData ? walletData.allTokens : [];
+
+    let isNewTx = false;
+    if (newTx.tx_id in historyTransactions) {
+      isNewTx = true;
+    }
+
+    hathorLib.wallet.updateHistoryData(historyTransactions, allTokens, [newTx], null, walletData);
+
+    if (isNewTx) {
+      this.emit('new-tx', newTx);
+    } else {
+      this.emit('update-tx', newTx);
+    }
+    return;
+
+    /*
+    // We need to reload it because it was modified by updateHistoryData.
+    const newWalletData = hathorLib.wallet.getWalletData();
+    const { keys } = newWalletData;
+
     const updatedHistoryMap = {};
     const updatedBalanceMap = {};
-    const balances = this.getTxBalance(tx);
+    const balances = this.getTxBalance(newTx);
 
     // we now loop through all tokens present in the new tx to get the new history and balance
     for (const [tokenUid, tokenTxBalance] of Object.entries(balances)) {
@@ -110,6 +150,10 @@ class Wallet extends EventEmitter {
     }
     const newTokensHistory = Object.assign({}, state.tokensHistory, updatedHistoryMap);
     const newTokensBalance = Object.assign({}, state.tokensBalance, updatedBalanceMap);
+
+    hathorLib.storage.setItem('local:tokens:history', newTokensHistory);
+    hathorLib.storage.setItem('local:tokens:balance', newTokensBalance);
+    */
   };
 
   /**
@@ -117,11 +161,12 @@ class Wallet extends EventEmitter {
    **/
   sendTransaction(address, value, token) {
     const isHathorToken = token.uid === hathorLib.constants.HATHOR_TOKEN_CONFIG.uid;
+    const tokenData = (isHathorToken? 0 : 1);
     const data = {
       tokens: isHathorToken ? [] : [token.uid],
       inputs: [],
       outputs: [{
-        address, value, tokenData: token.uid,
+        address, value, tokenData
       }],
     };
 
@@ -134,15 +179,7 @@ class Wallet extends EventEmitter {
       return;
     }
 
-    try {
-      hathorLib.transaction.sendTransaction(ret.data, this.pinCode).then((response) => {
-        console.log('sendTransaction', response);
-      }, (error) => {
-        console.log('sendTransaction error:', error);
-      });
-    } catch(e) {
-      console.log('sendTransaction exception:', e);
-    }
+    return hathorLib.transaction.sendTransaction(ret.data, this.pinCode);
   }
 
   /**
@@ -162,6 +199,7 @@ class Wallet extends EventEmitter {
         console.log('Server info:', version);
         hathorLib.WebSocketHandler.on('is_online', this.onConnectionChange);
         hathorLib.WebSocketHandler.on('reload_data', this.reloadData);
+        hathorLib.WebSocketHandler.on('addresses_loaded', this.onAddressesLoaded);
         hathorLib.WebSocketHandler.on('wallet', this.handleWebsocketMsg);
         hathorLib.WebSocketHandler.setup();
         resolve();
@@ -181,6 +219,7 @@ class Wallet extends EventEmitter {
     hathorLib.WebSocketHandler.stop()
     hathorLib.WebSocketHandler.removeListener('is_online', this.onConnectionChange);
     hathorLib.WebSocketHandler.removeListener('reload_data', this.reloadData);
+    hathorLib.WebSocketHandler.removeListener('addresses_loaded', this.onAddressesLoaded);
     hathorLib.WebSocketHandler.removeListener('wallet', this.handleWebsocketMsg);
     this.setState(Wallet.CLOSED);
   }
@@ -221,9 +260,13 @@ class Wallet extends EventEmitter {
   }
 }
 
+// State constants.
 Wallet.CLOSED =  0;
 Wallet.CONNECTING = 1;
 Wallet.SYNCING = 2;
 Wallet.READY = 3;
+
+// Other constants.
+Wallet.HTR_TOKEN = hathorLib.constants.HATHOR_TOKEN_CONFIG;
 
 export default Wallet;

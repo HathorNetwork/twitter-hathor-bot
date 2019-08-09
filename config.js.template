@@ -1,8 +1,13 @@
 module.exports = {
+  // Twitter API Keys
   consumer_key: '',
   consumer_secret: '',
   access_token_key: '',
   access_token_secret: '',
+
+  // Hathor Config
   server: 'https://node2.bravo.testnet.hathor.network/v1a/',
+
+  // Wallet Config
   seed: ''
 };
