@@ -121,7 +121,7 @@ class Wallet extends EventEmitter {
       tokens: isHathorToken ? [] : [token.uid],
       inputs: [],
       outputs: [{
-        address, value, tokenData: 0,
+        address, value, tokenData: token.uid,
       }],
     };
 
