@@ -9,3 +9,7 @@ For example, the tweet "Wig1U2TXnHXdMmXVQGAXmaGU66Gg76NXuj @Hathor #IWantHTR" ma
 It is a simple Hathor Wallet that may receive any token and will distribute those tokens according to a set of rules.
 
 To deposit some funds in the bot, just transfer the tokens to its address. To withdraw some funds, you have to use the seed in Hathor Wallet and transfer them somewhere else.
+
+## How to run?
+
+Copy `config.js.template` to `config.js`, and then fulfill the variables. Finally, run `npm start`.
