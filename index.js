@@ -61,7 +61,7 @@ class Manager {
   }
 
   matchHashtags(text) {
-    return text.match(/\B#\w*[a-zA-Z]+\w*\b/g);
+    return text.match(/\B#\w*[a-zA-Z]+\w*\b/g) || [];
   }
 
   matchMentions(text) {
