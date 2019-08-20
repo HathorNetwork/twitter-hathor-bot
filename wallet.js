@@ -157,6 +157,47 @@ class Wallet extends EventEmitter {
   };
 
   /**
+   * Send a transaction with multi tokens
+   * @param {Object} data Array of {'address', 'value', 'token'}
+   */
+  sendMultiTokenTransaction(data) {
+    console.log('Multi token', data)
+    const txData = {
+      inputs: [],
+      outputs: []
+    }
+
+    const walletData = hathorLib.wallet.getWalletData();
+    const historyTxs = 'historyTransactions' in walletData ? walletData.historyTransactions : {};
+
+    // First I need an array with all tokens
+    const allTokens = [];
+    for (const d of data) {
+      allTokens.push(d.token);
+    }
+
+    for (const d of data) {
+      const dataOutput = {'address': d.address, 'value': d.value, 'tokenData': hathorLib.tokens.getTokenIndex(allTokens, d.token.uid)};
+      const partialData = {'inputs': [], 'outputs': [dataOutput]}
+      const result = hathorLib.wallet.prepareSendTokensData(partialData, d.token, true, historyTxs, allTokens);
+
+      if (!ret.success) {
+        console.log('Error sending tx:', ret.message);
+        return;
+      }
+
+      const dataToken = result.data;
+
+      txData['inputs'] = [...txData['inputs'], ...dataToken['inputs']];
+      txData['outputs'] = [...txData['outputs'], ...dataToken['outputs']];
+    }
+
+    txData.tokens = allTokens;
+
+    return hathorLib.transaction.sendTransaction(txData, this.pinCode);
+  }
+
+  /**
    * Send tokens to only one address.
    **/
   sendTransaction(address, value, token) {

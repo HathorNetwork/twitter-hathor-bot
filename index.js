@@ -94,11 +94,11 @@ class Manager {
       return;
     }
 
-    const { address, value, token } = result;
     const username = tweet.user.screen_name;
 
     this.likeTweet(tweet);
-    this.wallet.sendTransaction(address, value, token).then((response) => {
+    this.wallet.sendMultiTokenTransaction(result).then((response) => {
+      const { address, value, token } = result[0];
       if (response.success) {
         const tx = response.tx;
         const value_str = `${value / 100} ${token.symbol}`;
@@ -150,17 +150,23 @@ class Manager {
     // Let's look for the hashtags.
 
     const hashtags = this.matchHashtags(tweet.text);
-    if (hashtags.findIndex((x) => x.toLowerCase() === '#iwanthtr') >= 0) {
-      const address = addresses[0];
-      const value = 100;
-      const token = Wallet.HTR_TOKEN;
-      return {address, value, token};
-    }
     if (hashtags.findIndex((x) => x.toLowerCase() === '#fgv2019') >= 0) {
+      console.log('FGV and HTR')
+      // Send FGV token and HTR
       const address = addresses[0];
       const value = 300;
       const token = this.tokens.FGVT;
-      return {address, value, token};
+
+      const valueHTR = 100;
+      const tokenHTR = Wallet.HTR_TOKEN;
+      return [{address, value, token}, {address, valueHTR, tokenHTR}];
+    }
+    if (hashtags.findIndex((x) => x.toLowerCase() === '#iwanthtr') >= 0) {
+      console.log('HTR')
+      const address = addresses[0];
+      const value = 100;
+      const token = Wallet.HTR_TOKEN;
+      return [{address, value, token}];
     }
 
     console.log(`Missing hashtag. Skipping tweet...`);
