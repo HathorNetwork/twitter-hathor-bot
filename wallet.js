@@ -161,7 +161,6 @@ class Wallet extends EventEmitter {
    * @param {Object} data Array of {'address', 'value', 'token'}
    */
   sendMultiTokenTransaction(data) {
-    console.log('Multi token', data)
     const txData = {
       inputs: [],
       outputs: []
@@ -181,8 +180,8 @@ class Wallet extends EventEmitter {
       const partialData = {'inputs': [], 'outputs': [dataOutput]}
       const result = hathorLib.wallet.prepareSendTokensData(partialData, d.token, true, historyTxs, allTokens);
 
-      if (!ret.success) {
-        console.log('Error sending tx:', ret.message);
+      if (!result.success) {
+        console.log('Error sending tx:', result.message);
         return;
       }
 
@@ -192,9 +191,33 @@ class Wallet extends EventEmitter {
       txData['outputs'] = [...txData['outputs'], ...dataToken['outputs']];
     }
 
-    txData.tokens = allTokens;
+    txData.tokens = hathorLib.tokens.filterTokens(allTokens, hathorLib.constants.HATHOR_TOKEN_CONFIG).map((token) => token.uid);
 
-    return hathorLib.transaction.sendTransaction(txData, this.pinCode);
+    const updateOutputs = (val) => {
+      const historyTxs = 'historyTransactions' in walletData ? walletData.historyTransactions : {};
+      for (const input of txData.inputs) {
+        historyTxs[input.tx_id]['outputs'][input.index]['spent_by'] = val;
+      }
+    }
+
+    // XXX Setting input as spent by, so it won't be chosen again
+    updateOutputs('2');
+
+    const promise = new Promise((resolve, reject) => {
+      hathorLib.transaction.sendTransaction(txData, this.pinCode).then((result) => {
+        if (result.success === false) {
+          // XXX Setting outputs as spent_by null again
+          updateOutputs(null);
+        }
+        resolve(result);
+      }, (error) => {
+        // XXX Setting outputs as spent_by null again
+        updateOutputs(null);
+        reject(error);
+      });
+    })
+
+    return promise;
   }
 
   /**

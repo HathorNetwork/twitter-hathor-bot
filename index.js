@@ -97,25 +97,30 @@ class Manager {
     const username = tweet.user.screen_name;
 
     this.likeTweet(tweet);
-    this.wallet.sendMultiTokenTransaction(result).then((response) => {
-      const { address, value, token } = result[0];
-      if (response.success) {
-        const tx = response.tx;
-        const value_str = `${value / 100} ${token.symbol}`;
-        const url = `https://explorer.hathor.network/transaction/${tx.hash}`;
-        const replyMessage = `@${username} I just sent ${value_str} to ${address}. Enjoy our testnet!\n\n${url}`;
+    const promise = this.wallet.sendMultiTokenTransaction(result)
+    if (promise) {
+      promise.then((response) => {
+        const { address, value, token } = result[0];
+        if (response.success) {
+          const tx = response.tx;
+          const value_str = `${value / 100} ${token.symbol}`;
+          const url = `https://explorer.hathor.network/transaction/${tx.hash}`;
+          const replyMessage = `@${username} I just sent ${value_str} to ${address}. Enjoy our testnet!\n\n${url}`;
+          this.replyTweet(tweet, replyMessage);
+
+        } else {
+          console.log('Error:', response);
+        }
+
+      }, (error) => {
+        console.log('Error sending tokens:', error);
+        const replyMessage = "@${username} I'm out of balance now. Sorry. :'(";
+        //const replyMessage = "Something went wrong sending you tokens. Sorry. :'("
         this.replyTweet(tweet, replyMessage);
-
-      } else {
-        console.log('Error:', response);
-      }
-
-    }).catch((error) => {
-      console.log('Error sending tokens:', error);
-      const replyMessage = "@${username} I'm out of balance now. Sorry. :'(";
-      //const replyMessage = "Something went wrong sending you tokens. Sorry. :'("
-      this.replyTweet(tweet, replyMessage);
-    });
+      });
+    } else {
+      console.log('Error sending tx');
+    }
   }
 
   replyTweet(tweet, message) {
@@ -151,7 +156,6 @@ class Manager {
 
     const hashtags = this.matchHashtags(tweet.text);
     if (hashtags.findIndex((x) => x.toLowerCase() === '#fgv2019') >= 0) {
-      console.log('FGV and HTR')
       // Send FGV token and HTR
       const address = addresses[0];
       const value = 300;
@@ -159,10 +163,9 @@ class Manager {
 
       const valueHTR = 100;
       const tokenHTR = Wallet.HTR_TOKEN;
-      return [{address, value, token}, {address, valueHTR, tokenHTR}];
+      return [{address, value, token}, {address, 'value': valueHTR, 'token': tokenHTR}];
     }
     if (hashtags.findIndex((x) => x.toLowerCase() === '#iwanthtr') >= 0) {
-      console.log('HTR')
       const address = addresses[0];
       const value = 100;
       const token = Wallet.HTR_TOKEN;
