@@ -22,6 +22,14 @@ class Manager {
     this.wallet.on('new-tx', this.onNewTx);
 
     this.twitter = new Twitter(config);
+
+    this.tokens = {
+      'FGVT': {
+        'name': 'FGV Token',
+        'symbol': 'FGVT',
+        'uid': 'c83d20ab7bf1751759a99cdb55ef2802f94fd1339f4c796b4981664a68c17528'
+      }
+    };
   }
 
   onWalletStateChange(state) {
@@ -93,7 +101,7 @@ class Manager {
     this.wallet.sendTransaction(address, value, token).then((response) => {
       if (response.success) {
         const tx = response.tx;
-        const value_str = '1 HTR';
+        const value_str = `${value / 100} ${token.symbol}`;
         const url = `https://explorer.hathor.network/transaction/${tx.hash}`;
         const replyMessage = `@${username} I just sent ${value_str} to ${address}. Enjoy our testnet!\n\n${url}`;
         this.replyTweet(tweet, replyMessage);
@@ -138,17 +146,25 @@ class Manager {
       return null;
     }
 
+    // Exactly one address found. Great!
+    // Let's look for the hashtags.
+
     const hashtags = this.matchHashtags(tweet.text);
-    if (hashtags.findIndex((x) => x.toLowerCase() === '#iwanthtr') < 0) {
-      console.log(`Missing hashtag #IWantHTR. Skipping tweet...`);
-      return null;
+    if (hashtags.findIndex((x) => x.toLowerCase() === '#iwanthtr') >= 0) {
+      const address = addresses[0];
+      const value = 100;
+      const token = Wallet.HTR_TOKEN;
+      return {address, value, token};
+    }
+    if (hashtags.findIndex((x) => x.toLowerCase() === '#fgv2019') >= 0) {
+      const address = addresses[0];
+      const value = 300;
+      const token = this.tokens.FGVT;
+      return {address, value, token};
     }
 
-    // Exactly one address found. Great!
-    const address = addresses[0];
-    const value = 100;
-    const token = Wallet.HTR_TOKEN;
-    return {address, value, token};
+    console.log(`Missing hashtag. Skipping tweet...`);
+    return null;
   }
 
   start() {
